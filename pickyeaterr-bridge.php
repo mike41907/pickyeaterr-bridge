@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Pickyeaterr Studio Bridge
  * Description: 讓 Pickyeaterr Studio（本機部落格中控台）透過 REST API 讀寫 Rank Math 的 SEO 欄位，並在文章頁顯示 GEO／AEO 補強區塊（重點摘要、店家資訊、常見問題）與對應的結構化資料。並可接收 Studio 送來的網站樣式（CSS）輸出在網站前台。不新增後台頁面、不建立資料表、不修改文章內文。
- * Version: 2.3.0
+ * Version: 2.3.1
  * Author: Pickyeaterr Studio
  * Requires at least: 5.6
  * Requires PHP: 7.4
@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'PE_BRIDGE_VERSION', '2.3.0' );
+define( 'PE_BRIDGE_VERSION', '2.3.1' );
 
 /**
  * 1) REST API 可讀寫的欄位。只有「能編輯該篇文章」的帳號才能讀寫。
@@ -787,7 +787,7 @@ add_action( 'rest_api_init', function () {
 					'config'     => pe_bridge_home_config(),
 					'popular'    => is_array( $pop ) ? array_values( array_map( 'intval', $pop ) ) : array(),
 					'popular_at' => (string) get_option( 'pe_home_popular_at', '' ),
-					'version'    => '2.3.0',
+					'version'    => '2.3.1',
 				);
 			},
 		),
@@ -952,6 +952,8 @@ add_action( 'wp_head', function () {
 	$css .= '.pe-h-pop{list-style:none;margin:0;padding:0}.pe-h-pop li{margin:0}.pe-h-pop a{display:flex;gap:14px;padding:14px 0;border-bottom:1px solid var(--pe-line)}.pe-h-pop-n{flex:none;width:24px;font-size:20px;font-weight:900;color:var(--pe-accent)}.pe-h-pop-t{font-size:15px;line-height:1.6}';
 	$css .= '.pe-h-hubs{background:var(--pe-dark);color:#fff;padding:22px 24px;margin-top:28px}.pe-h-hubs-title{margin:0 0 4px;font-size:13px;font-weight:700;letter-spacing:1px;color:var(--pe-accent-ink)}.pe-h-hubs a{display:flex;justify-content:space-between;padding:12px 0;border-top:1px solid rgba(255,255,255,.18);color:#fff}.pe-h-hubs a:hover{color:var(--pe-accent-ink)}';
 	$css .= '@media(max-width:900px){.pe-h-regions{grid-template-columns:repeat(2,minmax(0,1fr))}.pe-h-main{gap:36px}}@media(max-width:560px){.pe-home>section{padding-left:16px;padding-right:16px}.pe-h-hero{padding-top:24px;padding-bottom:20px}.pe-h-regions{gap:12px}.pe-h-region-img{height:88px}.pe-h-region-meta{flex-direction:column;gap:2px;padding:10px 12px 12px}.pe-h-region-name{font-size:18px}.pe-h-main{padding-top:36px;gap:28px}.pe-h-row{gap:14px;padding:14px 0}.pe-h-row-img{width:104px;height:78px}.pe-h-row-title{font-size:16px}.pe-h-pop a{padding:14px 0}.pe-h-hubs a{padding:14px 0}.pe-h-search button{min-width:64px}}';
+	// v2.3.1：頁首下方的空白（佈景主題內容區上方 50px＋隱藏的「首頁」標題留下的 40px）縮小
+	$css .= '.ct-container-full{padding-top:14px!important}@media(min-width:768px){.ct-container-full{padding-top:28px!important}}.hero-section{margin-bottom:0!important}';
 	echo '<style id="pe-home-base">' . $css . "</style>\n"; // phpcs:ignore WordPress.Security.EscapeOutput
 }, 97 );
 
