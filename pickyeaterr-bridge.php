@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Pickyeaterr Studio Bridge
  * Description: 讓 Pickyeaterr Studio（本機部落格中控台）透過 REST API 讀寫 Rank Math 的 SEO 欄位，並在文章頁顯示 GEO／AEO 補強區塊（重點摘要、店家資訊、常見問題）與對應的結構化資料。並可接收 Studio 送來的網站樣式（CSS）輸出在網站前台。不新增後台頁面、不建立資料表、不修改文章內文。
- * Version: 2.3.1
+ * Version: 2.4.0
  * Author: Pickyeaterr Studio
  * Requires at least: 5.6
  * Requires PHP: 7.4
@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'PE_BRIDGE_VERSION', '2.3.1' );
+define( 'PE_BRIDGE_VERSION', '2.4.0' );
 
 /**
  * 1) REST API 可讀寫的欄位。只有「能編輯該篇文章」的帳號才能讀寫。
@@ -22,6 +22,7 @@ define( 'PE_BRIDGE_VERSION', '2.3.1' );
  *    pe_geo_summary：重點摘要（純文字）
  *    pe_geo_faq：常見問題（JSON：[{q,a}]）
  *    pe_geo_place：店家／景點資訊（JSON）
+ *    pe_recipe：食譜文章的材料、步驟、時間（JSON，v2.4）
  */
 add_action( 'init', function () {
 	$fields = array(
@@ -33,6 +34,7 @@ add_action( 'init', function () {
 		'pe_geo_faq'              => 'pe_bridge_sanitize_json',
 		'pe_geo_place'            => 'pe_bridge_sanitize_json',
 		'pe_visit_date'           => 'sanitize_text_field',
+		'pe_recipe'               => 'pe_bridge_sanitize_json',
 	);
 	foreach ( array( 'post', 'page' ) as $post_type ) {
 		foreach ( $fields as $key => $sanitize ) {
@@ -214,6 +216,17 @@ add_action( 'wp_head', function () {
 			$graph[] = array( '@type' => 'FAQPage', 'mainEntity' => $entities );
 		}
 	}
+	// v2.4 食譜：材料與步驟都是 Studio 從文章原文抄出來的（畫面上本來就看得到），只補成 Google 看得懂的格式
+	$recipe = pe_bridge_json_meta( $id, 'pe_recipe' );
+	if ( $recipe && ! empty( $recipe['ingredients'] ) && ! empty( $recipe['steps'] ) ) {
+		$node = pe_bridge_recipe_node( $id, $recipe );
+		if ( $node ) {
+			$graph = array_values( array_filter( $graph, function ( $n ) {
+				return 'Recipe' !== ( $n['@type'] ?? '' );
+			} ) );
+			$graph[] = $node;
+		}
+	}
 	if ( ! $graph ) {
 		return;
 	}
@@ -221,6 +234,75 @@ add_action( 'wp_head', function () {
 		. wp_json_encode( array( '@context' => 'https://schema.org', '@graph' => $graph ), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP )
 		. "</script>\n";
 }, 30 );
+
+/**
+ * v2.4 食譜結構化資料（Recipe）。圖片用精選圖片，沒有的話用文章裡第一張圖（Google 規定食譜一定要有圖）。
+ * 不輸出評分：網站沒有讀者評分，不能自己編。
+ */
+function pe_bridge_iso_minutes( $m ) {
+	$m = (int) $m;
+	if ( $m <= 0 ) {
+		return '';
+	}
+	$h = intdiv( $m, 60 );
+	$r = $m % 60;
+	return 'PT' . ( $h ? $h . 'H' : '' ) . ( $r ? $r . 'M' : '' );
+}
+function pe_bridge_recipe_node( $id, $r ) {
+	$images = array();
+	$thumb  = get_the_post_thumbnail_url( $id, 'full' );
+	if ( $thumb ) {
+		$images[] = $thumb;
+	}
+	if ( ! $images ) {
+		$post = get_post( $id );
+		if ( $post && preg_match( '/<img[^>]+src=["\']([^"\']+)["\']/i', $post->post_content, $m ) ) {
+			$images[] = esc_url_raw( $m[1] );
+		}
+	}
+	if ( ! $images ) {
+		return null;
+	}
+	$author = get_the_author_meta( 'display_name', (int) get_post_field( 'post_author', $id ) );
+	$node   = array(
+		'@type'              => 'Recipe',
+		'name'               => ! empty( $r['name'] ) ? $r['name'] : wp_strip_all_tags( get_the_title( $id ) ),
+		'image'              => $images,
+		'datePublished'      => get_the_date( 'c', $id ),
+		'recipeIngredient'   => array_values( array_map( 'strval', (array) $r['ingredients'] ) ),
+		'recipeInstructions' => array(),
+	);
+	if ( $author ) {
+		$node['author'] = array( '@type' => 'Person', 'name' => $author );
+	}
+	$desc = ! empty( $r['description'] ) ? $r['description'] : get_the_excerpt( $id );
+	if ( $desc ) {
+		$node['description'] = wp_strip_all_tags( $desc );
+	}
+	foreach ( (array) $r['steps'] as $i => $st ) {
+		$node['recipeInstructions'][] = array( '@type' => 'HowToStep', 'position' => $i + 1, 'text' => (string) $st );
+	}
+	$prep = pe_bridge_iso_minutes( $r['prepTime'] ?? 0 );
+	$cook = pe_bridge_iso_minutes( $r['cookTime'] ?? 0 );
+	if ( $prep ) {
+		$node['prepTime'] = $prep;
+	}
+	if ( $cook ) {
+		$node['cookTime'] = $cook;
+	}
+	if ( $prep || $cook ) {
+		$node['totalTime'] = pe_bridge_iso_minutes( (int) ( $r['prepTime'] ?? 0 ) + (int) ( $r['cookTime'] ?? 0 ) );
+	}
+	foreach ( array( 'recipeYield' => 'recipeYield', 'category' => 'recipeCategory', 'cuisine' => 'recipeCuisine' ) as $from => $to ) {
+		if ( ! empty( $r[ $from ] ) ) {
+			$node[ $to ] = (string) $r[ $from ];
+		}
+	}
+	if ( ! empty( $r['keywords'] ) && is_array( $r['keywords'] ) ) {
+		$node['keywords'] = implode( ', ', array_map( 'strval', $r['keywords'] ) );
+	}
+	return $node;
+}
 
 /**
  * 4) 健康檢查端點：GET /wp-json/pe-bridge/v1/status
@@ -787,7 +869,7 @@ add_action( 'rest_api_init', function () {
 					'config'     => pe_bridge_home_config(),
 					'popular'    => is_array( $pop ) ? array_values( array_map( 'intval', $pop ) ) : array(),
 					'popular_at' => (string) get_option( 'pe_home_popular_at', '' ),
-					'version'    => '2.3.1',
+					'version'    => '2.4.0',
 				);
 			},
 		),
