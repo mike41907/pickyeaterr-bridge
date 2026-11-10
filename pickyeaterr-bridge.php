@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Pickyeaterr Studio Bridge
  * Description: 讓 Pickyeaterr Studio（本機部落格中控台）透過 REST API 讀寫 Rank Math 的 SEO 欄位，並在文章頁顯示 GEO／AEO 補強區塊（重點摘要、店家資訊、常見問題）與對應的結構化資料。並可接收 Studio 送來的網站樣式（CSS）輸出在網站前台。不新增後台頁面、不建立資料表、不修改文章內文。
- * Version: 2.4.0
+ * Version: 2.4.1
  * Author: Pickyeaterr Studio
  * Requires at least: 5.6
  * Requires PHP: 7.4
@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'PE_BRIDGE_VERSION', '2.4.0' );
+define( 'PE_BRIDGE_VERSION', '2.4.1' );
 
 /**
  * 1) REST API 可讀寫的欄位。只有「能編輯該篇文章」的帳號才能讀寫。
@@ -736,7 +736,13 @@ add_filter( 'the_content', function ( $content ) {
 	}
 
 	if ( $s['related_enabled'] ) {
-		$ids = pe_bridge_related_ids( $id, $s['related_count'] );
+		// 內文已經連過的文章不再放進延伸閱讀（同一篇出現兩次沒有意義）
+		$hay = strtolower( rawurldecode( $content ) ); // 中文網址有編碼和沒編碼兩種寫法，統一後再比
+		$ids = array_values( array_filter( pe_bridge_related_ids( $id, $s['related_count'] + 4 ), function ( $rid ) use ( $hay ) {
+			$link = get_permalink( $rid );
+			return ! $link || false === strpos( $hay, strtolower( rawurldecode( untrailingslashit( $link ) ) ) );
+		} ) );
+		$ids = array_slice( $ids, 0, $s['related_count'] );
 		if ( $ids ) {
 			$items = '';
 			foreach ( $ids as $rid ) {
@@ -869,7 +875,7 @@ add_action( 'rest_api_init', function () {
 					'config'     => pe_bridge_home_config(),
 					'popular'    => is_array( $pop ) ? array_values( array_map( 'intval', $pop ) ) : array(),
 					'popular_at' => (string) get_option( 'pe_home_popular_at', '' ),
-					'version'    => '2.4.0',
+					'version'    => '2.4.1',
 				);
 			},
 		),
